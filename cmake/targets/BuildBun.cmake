@@ -819,7 +819,7 @@ set_target_properties(${bun} PROPERTIES
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS YES
   CXX_VISIBILITY_PRESET hidden
-  C_STANDARD 17
+  C_STANDARD 23
   C_STANDARD_REQUIRED YES
   VISIBILITY_INLINES_HIDDEN YES
 )
@@ -1308,32 +1308,32 @@ if(NOT BUN_CPP_ONLY)
       OUTPUTS
         ${BUILD_PATH}/${bunStripExe}
     )
-    
+
     # Then sign both executables on Windows
     if(WIN32 AND ENABLE_WINDOWS_CODESIGNING)
       set(SIGN_SCRIPT "${CMAKE_SOURCE_DIR}/.buildkite/scripts/sign-windows.ps1")
-      
+
       # Verify signing script exists
       if(NOT EXISTS "${SIGN_SCRIPT}")
         message(FATAL_ERROR "Windows signing script not found: ${SIGN_SCRIPT}")
       endif()
-      
+
       # Use PowerShell for Windows code signing (native Windows, no path issues)
-      find_program(POWERSHELL_EXECUTABLE 
+      find_program(POWERSHELL_EXECUTABLE
         NAMES pwsh.exe powershell.exe
-        PATHS 
+        PATHS
           "C:/Program Files/PowerShell/7"
           "C:/Program Files (x86)/PowerShell/7"
           "C:/Windows/System32/WindowsPowerShell/v1.0"
         DOC "Path to PowerShell executable"
       )
-      
+
       if(NOT POWERSHELL_EXECUTABLE)
         set(POWERSHELL_EXECUTABLE "powershell.exe")
       endif()
-      
+
       message(STATUS "Using PowerShell executable: ${POWERSHELL_EXECUTABLE}")
-      
+
       # Sign both bun-profile.exe and bun.exe after stripping
       register_command(
         TARGET

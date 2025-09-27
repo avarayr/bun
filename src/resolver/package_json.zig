@@ -913,7 +913,7 @@ pub const PackageJSON = struct {
 
                         if (tag == .npm) {
                             const sliced = Semver.SlicedString.init(package_json.version, package_json.version);
-                            if (Dependency.parseWithTag(
+                            if (Dependency.NpaBridge.parseWithKnownTag(
                                 allocator,
                                 String.init(package_json.name, package_json.name),
                                 String.Builder.stringHash(package_json.name),

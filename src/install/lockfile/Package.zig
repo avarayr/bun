@@ -1023,7 +1023,7 @@ pub fn Package(comptime SemverIntType: type) type {
             const buf = lockfile.buffers.string_bytes.items;
             const sliced = external_version.sliced(buf);
 
-            var dependency_version = Dependency.parseWithOptionalTag(
+            var dependency_version = Dependency.NpaBridge.parseWithOptionalTag(
                 allocator,
                 external_alias.value,
                 external_alias.hash,
@@ -1092,7 +1092,7 @@ pub fn Package(comptime SemverIntType: type) type {
                     if (workspace_version != null) {
                         if (pm.options.link_workspace_packages and npm.version.satisfies(workspace_version.?, buf, buf)) {
                             const path = workspace_path.?.sliced(buf);
-                            if (Dependency.parseWithTag(
+                            if (Dependency.NpaBridge.parseWithKnownTag(
                                 allocator,
                                 external_alias.value,
                                 external_alias.hash,

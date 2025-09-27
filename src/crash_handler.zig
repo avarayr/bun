@@ -241,7 +241,7 @@ pub fn crashHandler(
                     } else if (bun.analytics.Features.unsupported_uv_function > 0) {
                         const name = unsupported_uv_function orelse "<unknown>";
                         const fmt =
-                            \\Bun encountered a crash when running a NAPI module that tried to call 
+                            \\Bun encountered a crash when running a NAPI module that tried to call
                             \\the <red>{s}<r> libuv function.
                             \\
                             \\Bun is actively working on supporting all libuv functions for POSIX
@@ -403,7 +403,7 @@ pub fn crashHandler(
                         } else if (bun.analytics.Features.unsupported_uv_function > 0) {
                             const name = unsupported_uv_function orelse "<unknown>";
                             const fmt =
-                                \\Bun encountered a crash when running a NAPI module that tried to call 
+                                \\Bun encountered a crash when running a NAPI module that tried to call
                                 \\the <red>{s}<r> libuv function.
                                 \\
                                 \\Bun is actively working on supporting all libuv functions for POSIX
@@ -1512,7 +1512,7 @@ fn report(url: []const u8) void {
             var buf2: bun.PathBuffer = undefined;
             const curl = bun.which(
                 &buf,
-                bun.getenvZ("PATH") orelse return,
+                bun.EnvVar.path.get() orelse return,
                 bun.getcwd(&buf2) catch return,
                 "curl",
             ) orelse return;

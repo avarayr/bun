@@ -1,3 +1,4 @@
+// TODO(markovejnovic): This could be merged with immutable.zig:SlicedBuffer
 const SlicedString = @This();
 
 buf: string,
@@ -30,7 +31,12 @@ pub inline fn value(this: SlicedString) String {
 
 pub inline fn sub(this: SlicedString, input: string) SlicedString {
     if (Environment.allow_assert) {
-        if (!(@intFromPtr(this.buf.ptr) <= @intFromPtr(this.buf.ptr) and ((@intFromPtr(input.ptr) + input.len) <= (@intFromPtr(this.buf.ptr) + this.buf.len)))) {
+        const start_buf = @intFromPtr(this.buf.ptr);
+        const end_buf = @intFromPtr(this.buf.ptr) + this.buf.len;
+        const start_i = @intFromPtr(input.ptr);
+        const end_i = @intFromPtr(input.ptr) + input.len;
+
+        if (!(start_buf <= start_i and end_i <= end_buf)) {
             @panic("SlicedString.sub input is not a substring of the slice");
         }
     }

@@ -16,6 +16,20 @@ pub const URL = opaque {
     extern fn URL__getFileURLString(*String) String;
     extern fn URL__getHrefJoin(*String, *String) String;
     extern fn URL__pathFromFileURL(*String) String;
+    extern fn URL__hash(*URL) String;
+    extern fn URL__fragmentIdentifier(*URL) String;
+
+    /// Includes the leading '#'.
+    pub fn hash(url: *URL) String {
+        jsc.markBinding(@src());
+        return URL__hash(url);
+    }
+
+    /// Exactly the same as hash, excluding the leading '#'.
+    pub fn fragmentIdentifier(url: *URL) String {
+        jsc.markBinding(@src());
+        return URL__fragmentIdentifier(url);
+    }
 
     pub fn hrefFromString(str: bun.String) String {
         jsc.markBinding(@src());
@@ -121,6 +135,63 @@ pub const URL = opaque {
         if (len == 0) return null;
         return slice[0..len];
     }
+
+    /// Utilities for interacting with URL components as slices.
+    pub fn sliceTools(url: *URL) SliceTools {
+        return .{ .url = url };
+    }
+
+    pub const SliceTools = struct {
+        url: *URL,
+
+        pub fn protocol(self: SliceTools, allocator: std.mem.Allocator) ![]const u8 {
+            const str = self.url.protocol();
+            defer str.deref();
+            const utf8 = str.toUTF8(allocator);
+            defer utf8.deinit();
+            return allocator.dupe(u8, utf8.slice());
+        }
+
+        pub fn host(self: SliceTools, allocator: std.mem.Allocator) ![]const u8 {
+            const str = self.url.host();
+            defer str.deref();
+            const utf8 = str.toUTF8(allocator);
+            defer utf8.deinit();
+            return allocator.dupe(u8, utf8.slice());
+        }
+
+        pub fn pathname(self: SliceTools, allocator: std.mem.Allocator) ![]const u8 {
+            const str = self.url.pathname();
+            defer str.deref();
+            const utf8 = str.toUTF8(allocator);
+            defer utf8.deinit();
+            return allocator.dupe(u8, utf8.slice());
+        }
+
+        pub fn hash(self: SliceTools, allocator: std.mem.Allocator) ![]const u8 {
+            const str = self.url.hash();
+            defer str.deref();
+            const utf8 = str.toUTF8(allocator);
+            defer utf8.deinit();
+            return allocator.dupe(u8, utf8.slice());
+        }
+
+        pub fn href(self: SliceTools, allocator: std.mem.Allocator) ![]const u8 {
+            const str = self.url.href();
+            defer str.deref();
+            const utf8 = str.toUTF8(allocator);
+            defer utf8.deinit();
+            return allocator.dupe(u8, utf8.slice());
+        }
+
+        pub fn fragmentIdentifier(self: SliceTools, allocator: std.mem.Allocator) ![]const u8 {
+            const str = self.url.fragmentIdentifier();
+            defer str.deref();
+            const utf8 = str.toUTF8(allocator);
+            defer utf8.deinit();
+            return allocator.dupe(u8, utf8.slice());
+        }
+    };
 };
 
 const std = @import("std");

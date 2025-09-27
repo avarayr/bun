@@ -545,7 +545,7 @@ pub const FileSystem = struct {
                             ) catch |err| bun.handleOom(err);
                         }
 
-                        if (bun.getenvZ("USERPROFILE")) |profile| {
+                        if (bun.EnvVar.home.get()) |profile| {
                             var buf: bun.PathBuffer = undefined;
                             var parts = [_]string{"AppData\\Local\\Temp"};
                             const out = bun.path.joinAbsStringBuf(profile, &buf, &parts, .loose);

@@ -903,7 +903,7 @@ pub const Installer = struct {
                             defer target.deinit();
 
                             target.append("..");
-                            if (strings.containsChar(pkg_name.slice(installer.lockfile.buffers.string_bytes.items), '/')) {
+                            if (bun.path.hasPosixPathSlashes(pkg_name.slice(installer.lockfile.buffers.string_bytes.items))) {
                                 target.append("..");
                             }
 

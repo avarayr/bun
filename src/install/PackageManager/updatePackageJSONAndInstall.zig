@@ -569,7 +569,7 @@ fn updatePackageJSONAndInstallAndCLI(
         if (manager.options.global) {
             if (manager.options.bin_path.len > 0 and manager.track_installed_bin == .basename) {
                 var path_buf: bun.PathBuffer = undefined;
-                const needs_to_print = if (bun.getenvZ("PATH")) |PATH|
+                const needs_to_print = if (bun.EnvVar.path.get()) |PATH|
                     // This is not perfect
                     //
                     // If you already have a different binary of the same

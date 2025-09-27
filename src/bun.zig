@@ -7,6 +7,7 @@
 const bun = @This();
 
 pub const Environment = @import("./env.zig");
+pub const EnvVar = @import("./envvars.zig");
 
 pub const use_mimalloc = @import("build_options").use_mimalloc;
 pub const default_allocator: std.mem.Allocator = allocators.c_allocator;
@@ -3795,6 +3796,8 @@ pub fn getUseSystemCA(globalObject: *jsc.JSGlobalObject, callFrame: *jsc.CallFra
     const Arguments = @import("./cli/Arguments.zig");
     return jsc.JSValue.jsBoolean(Arguments.Bun__Node__UseSystemCA);
 }
+
+pub const os = @import("./os.zig");
 
 const CopyFile = @import("./copy_file.zig");
 const builtin = @import("builtin");

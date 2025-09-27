@@ -570,7 +570,7 @@ pub const UpgradeCommand = struct {
 
                     var buf: bun.PathBuffer = undefined;
                     const powershell_path =
-                        bun.which(&buf, bun.getenvZ("PATH") orelse "", "", "powershell") orelse
+                        bun.which(&buf, bun.EnvVar.path.get() orelse "", "", "powershell") orelse
                         hardcoded_system_powershell: {
                             const system_root = bun.getenvZ("SystemRoot") orelse "C:\\Windows";
                             const hardcoded_system_powershell = bun.path.joinAbsStringBuf(system_root, &buf, &.{ system_root, "System32\\WindowsPowerShell\\v1.0\\powershell.exe" }, .windows);

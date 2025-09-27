@@ -74,7 +74,7 @@ pub fn cloneWithDifferentBuffers(this: *const Dependency, package_manager: *Pack
     return Dependency{
         .name_hash = this.name_hash,
         .name = new_name,
-        .version = Dependency.parseWithTag(
+        .version = NpaBridge.parseWithKnownTag(
             builder.lockfile.allocator,
             new_name,
             String.Builder.stringHash(new_name.slice(out_slice)),
@@ -427,7 +427,7 @@ pub const Version = struct {
         const slice = String{ .bytes = bytes[1..9].* };
         const tag = @as(Dependency.Version.Tag, @enumFromInt(bytes[0]));
         const sliced = &slice.sliced(ctx.buffer);
-        return Dependency.parseWithTag(
+        return NpaBridge.parseWithKnownTag(
             ctx.allocator,
             alias,
             alias_hash,
@@ -849,22 +849,367 @@ pub fn eql(
     return a.name_hash == b.name_hash and a.name.len() == b.name.len() and a.version.eql(&b.version, lhs_buf, rhs_buf);
 }
 
-pub fn isWindowsAbsPathWithLeadingSlashes(dep: string) ?string {
-    var i: usize = 0;
-    if (dep.len > 2 and dep[i] == '/') {
-        while (dep[i] == '/') {
-            i += 1;
-
-            // not possible to have windows drive letter and colon
-            if (i > dep.len - 3) return null;
+/// Bridge between npm_package_arg.zig and dependency.zig.
+///
+/// As we migrate away from dependency.zig, this will eventually be removed and simply become
+/// npm_package_arg.zig.
+pub const NpaBridge = struct {
+    /// Helper for converting strings from NpaSpec's arena to Bun's String/SlicedString types.
+    /// NpaSpec allocates its own arena for parsed strings, which are not part of the lockfile
+    /// buffer. This helper ensures we create self-referential String instances instead of trying
+    /// to use sliced.sub() which would panic since the strings aren't substrings of the lockfile
+    /// buffer.
+    const StringConverter = struct {
+        /// Convert an optional NpaSpec string to a String, with fallback
+        inline fn stringOrDefault(str: ?[]const u8, default: String) String {
+            return if (str) |s| String.init(s, s) else default;
         }
-        if (strings.startsWithWindowsDriveLetter(dep[i..])) {
-            return dep[i..];
+
+        /// Convert an optional NpaSpec string to a String, with empty string fallback
+        inline fn stringOrEmpty(str: ?[]const u8) String {
+            return stringOrDefault(str, String.from(""));
+        }
+
+        /// Convert a required NpaSpec string to a String
+        inline fn string(str: []const u8) String {
+            return String.init(str, str);
+        }
+
+        /// Convert a required NpaSpec string to a SlicedString
+        inline fn sliced(str: []const u8) SlicedString {
+            return SlicedString.init(str, str);
+        }
+    };
+
+    /// Convert NpaSpec to Dependency.Version for git repositories
+    fn convertGit(
+        spec: *const npm_package_arg.NpaSpec,
+        sliced: *const SlicedString,
+    ) ?Version {
+        const fetch_spec = spec.fetchSpec() orelse return null;
+
+        const fetch_spec_string = StringConverter.string(fetch_spec);
+        const name_string = StringConverter.stringOrEmpty(spec.name);
+
+        // Check if this is a GitHub hosted repo
+        if (spec.type == .git and spec.type.git.hosted != null) {
+            const hosted = spec.type.git.hosted.?;
+            if (hosted.host_provider == .github) {
+                // Convert to .github type
+                return .{
+                    .literal = sliced.value(),
+                    .value = .{
+                        .github = .{
+                            .owner = StringConverter.stringOrEmpty(hosted.user),
+                            .repo = StringConverter.string(hosted.project),
+                            .committish = StringConverter.stringOrEmpty(hosted.committish),
+                            .resolved = String.from(""),
+                            .package_name = name_string,
+                        },
+                    },
+                    .tag = .github,
+                };
+            }
+        }
+
+        // Generic git repo
+        const committish = if (spec.type == .git and spec.type.git.attrs != null)
+            StringConverter.stringOrEmpty(spec.type.git.attrs.?.committish)
+        else
+            String.from("");
+
+        return .{
+            .literal = sliced.value(),
+            .value = .{
+                .git = .{
+                    .owner = String.from(""),
+                    .repo = fetch_spec_string,
+                    .committish = committish,
+                    .resolved = String.from(""),
+                    .package_name = name_string,
+                },
+            },
+            .tag = .git,
+        };
+    }
+
+    /// Convert NpaSpec to Dependency.Version for file/directory specs
+    fn convertFile(
+        spec: *const npm_package_arg.NpaSpec,
+        sliced: *const SlicedString,
+    ) ?Version {
+        const fetch_spec = spec.fetchSpec() orelse return null;
+
+        const fetch_spec_string = StringConverter.string(fetch_spec);
+        const name_string = StringConverter.stringOrEmpty(spec.name);
+
+        if (spec.type == .file) {
+            // It's a tarball
+            return .{
+                .tag = .tarball,
+                .literal = sliced.value(),
+                .value = .{ .tarball = .{
+                    .uri = .{ .local = fetch_spec_string },
+                    .package_name = name_string,
+                } },
+            };
+        } else {
+            // It's a directory
+            return .{
+                .value = .{ .folder = fetch_spec_string },
+                .tag = .folder,
+                .literal = sliced.value(),
+            };
         }
     }
 
-    return null;
-}
+    /// Convert NpaSpec to Dependency.Version for npm version/range specs
+    fn convertNpm(
+        allocator: std.mem.Allocator,
+        alias: String,
+        alias_hash: ?PackageNameHash,
+        spec: *const npm_package_arg.NpaSpec,
+        sliced: *const SlicedString,
+        package_manager: ?*PackageManager,
+    ) ?Version {
+        const fetch_spec = spec.fetchSpec() orelse "*";
+
+        // Strip single leading v (npa doesn't do this, but Bun does)
+        // v1.0.0 -> 1.0.0
+        const version_str = if (fetch_spec.len > 1 and fetch_spec[0] == 'v')
+            fetch_spec[1..]
+        else
+            fetch_spec;
+
+        // Parse with Semver
+        const version_sliced = StringConverter.sliced(version_str);
+        const version = Semver.Query.parse(
+            allocator,
+            version_str,
+            version_sliced,
+        ) catch |err| {
+            switch (err) {
+                error.OutOfMemory => bun.outOfMemory(),
+            }
+        };
+
+        // Determine if this is an alias
+        const name = if (spec.type == .alias) blk: {
+            if (spec.type.alias.sub_spec.name) |n| {
+                break :blk StringConverter.string(n);
+            }
+            break :blk alias;
+        } else if (spec.name) |n|
+            StringConverter.string(n)
+        else
+            alias;
+
+        const is_alias = spec.type == .alias or
+            (spec.name != null and alias_hash != null and !name.eql(alias, sliced.buf, sliced.buf));
+
+        const result = Version{
+            .literal = sliced.value(),
+            .value = .{
+                .npm = .{
+                    .is_alias = is_alias,
+                    .name = name,
+                    .version = version,
+                },
+            },
+            .tag = .npm,
+        };
+
+        if (is_alias and alias_hash != null) {
+            if (package_manager) |pm| {
+                pm.known_npm_aliases.put(
+                    allocator,
+                    alias_hash.?,
+                    result,
+                ) catch unreachable;
+            }
+        }
+
+        return result;
+    }
+
+    /// Convert NpaSpec to Dependency.Version for dist-tag specs
+    fn convertDistTag(
+        alias: String,
+        spec: *const npm_package_arg.NpaSpec,
+        sliced: *const SlicedString,
+    ) ?Version {
+        const name = StringConverter.stringOrDefault(spec.name, alias);
+        const tag = spec.fetchSpec() orelse "latest";
+
+        return .{
+            .literal = sliced.value(),
+            .value = .{
+                .dist_tag = .{
+                    .name = name,
+                    .tag = StringConverter.string(tag),
+                },
+            },
+            .tag = .dist_tag,
+        };
+    }
+
+    /// Convert NpaSpec to Dependency.Version for remote tarball specs
+    fn convertRemote(
+        spec: *const npm_package_arg.NpaSpec,
+        sliced: *const SlicedString,
+    ) ?Version {
+        const fetch_spec = spec.fetchSpec() orelse return null;
+
+        return .{
+            .tag = .tarball,
+            .literal = sliced.value(),
+            .value = .{ .tarball = .{
+                .uri = .{ .remote = StringConverter.string(fetch_spec) },
+                .package_name = StringConverter.stringOrEmpty(spec.name),
+            } },
+        };
+    }
+
+    /// Convert an already-parsed NpaSpec to Dependency.Version
+    pub fn toVersion(
+        allocator: std.mem.Allocator,
+        alias: String,
+        alias_hash: ?PackageNameHash,
+        spec: *const npm_package_arg.NpaSpec,
+        sliced: *const SlicedString,
+        package_manager: ?*PackageManager,
+    ) ?Version {
+        return switch (spec.type) {
+            .git => convertGit(spec, sliced),
+            .file, .directory => convertFile(spec, sliced),
+            .version, .range => convertNpm(allocator, alias, alias_hash, spec, sliced, package_manager),
+            .tag => convertDistTag(alias, spec, sliced),
+            .alias => convertNpm(allocator, alias, alias_hash, spec, sliced, package_manager),
+            .remote => convertRemote(spec, sliced),
+        };
+    }
+
+    /// Parse a dependency string using npm_package_arg and convert to Dependency.Version
+    pub fn parse(
+        allocator: std.mem.Allocator,
+        alias: String,
+        alias_hash: ?PackageNameHash,
+        dependency: string,
+        sliced: *const SlicedString,
+        log: ?*logger.Log,
+        package_manager: ?*PackageManager,
+    ) ?Version {
+        const where = "."; // Use current directory as base
+
+        var spec = npm_package_arg.npa(allocator, dependency, where) catch |err| {
+            if (log) |l| {
+                l.addErrorFmt(null, logger.Loc.Empty, allocator, "Failed to parse dependency \"{s}\": {s}", .{ dependency, @errorName(err) }) catch {};
+            }
+            return null;
+        };
+        defer spec.deinit();
+
+        return toVersion(allocator, alias, alias_hash, &spec, sliced, package_manager);
+    }
+
+    /// Parse workspace: protocol dependency (Bun-specific)
+    pub fn parseWorkspace(
+        dependency: string,
+        sliced: *const SlicedString,
+    ) ?Version {
+        var input = dependency;
+        if (strings.hasPrefixComptime(input, "workspace:")) {
+            input = input["workspace:".len..];
+        }
+        return .{
+            .value = .{ .workspace = sliced.sub(input).value() },
+            .tag = .workspace,
+            .literal = sliced.value(),
+        };
+    }
+
+    /// Parse catalog: protocol dependency (Bun-specific)
+    pub fn parseCatalog(
+        dependency: string,
+        sliced: *const SlicedString,
+    ) ?Version {
+        bun.assert(strings.hasPrefixComptime(dependency, "catalog:"));
+
+        const group = dependency["catalog:".len..];
+        const trimmed = strings.trim(group, &strings.whitespace_chars);
+
+        return .{
+            .value = .{ .catalog = sliced.sub(trimmed).value() },
+            .tag = .catalog,
+            .literal = sliced.value(),
+        };
+    }
+
+    /// Parse link: protocol dependency (Bun-specific symlink)
+    pub fn parseSymlink(
+        dependency: string,
+        sliced: *const SlicedString,
+    ) ?Version {
+        if (strings.indexOfChar(dependency, ':')) |colon| {
+            return .{
+                .value = .{ .symlink = sliced.sub(dependency[colon + 1 ..]).value() },
+                .tag = .symlink,
+                .literal = sliced.value(),
+            };
+        }
+
+        return .{
+            .value = .{ .symlink = sliced.value() },
+            .tag = .symlink,
+            .literal = sliced.value(),
+        };
+    }
+
+    /// Parse dependency with a pre-determined tag (for deserialization/re-cloning)
+    pub fn parseWithKnownTag(
+        allocator: std.mem.Allocator,
+        alias: String,
+        alias_hash: ?PackageNameHash,
+        dependency: string,
+        tag: Version.Tag,
+        sliced: *const SlicedString,
+        log: ?*logger.Log,
+        package_manager: ?*PackageManager,
+    ) ?Version {
+        // Handle Bun-specific tags directly
+        switch (tag) {
+            .workspace => return parseWorkspace(dependency, sliced),
+            .catalog => return parseCatalog(dependency, sliced),
+            .symlink => return parseSymlink(dependency, sliced),
+            .uninitialized => return null,
+            else => {},
+        }
+
+        // For npm-compatible tags, use npm_package_arg
+        // It will infer the tag from the dependency string
+        return NpaBridge.parse(allocator, alias, alias_hash, dependency, sliced, log, package_manager);
+    }
+
+    /// Parse dependency with an optional pre-determined tag.
+    /// If tag is null, infer it from the dependency string.
+    /// If tag is non-null, use it directly.
+    pub fn parseWithOptionalTag(
+        allocator: std.mem.Allocator,
+        alias: String,
+        alias_hash: ?PackageNameHash,
+        dependency: string,
+        tag: ?Version.Tag,
+        sliced: *const SlicedString,
+        log: ?*logger.Log,
+        package_manager: ?*PackageManager,
+    ) ?Version {
+        if (tag) |known_tag| {
+            return parseWithKnownTag(allocator, alias, alias_hash, dependency, known_tag, sliced, log, package_manager);
+        } else {
+            return NpaBridge.parse(allocator, alias, alias_hash, dependency, sliced, log, package_manager);
+        }
+    }
+};
 
 pub inline fn parse(
     allocator: std.mem.Allocator,
@@ -876,401 +1221,20 @@ pub inline fn parse(
     manager: ?*PackageManager,
 ) ?Version {
     const dep = std.mem.trimLeft(u8, dependency, " \t\n\r");
-    return parseWithTag(allocator, alias, alias_hash, dep, Version.Tag.infer(dep), sliced, log, manager);
-}
 
-pub fn parseWithOptionalTag(
-    allocator: std.mem.Allocator,
-    alias: String,
-    alias_hash: ?PackageNameHash,
-    dependency: string,
-    tag: ?Dependency.Version.Tag,
-    sliced: *const SlicedString,
-    log: ?*logger.Log,
-    package_manager: ?*PackageManager,
-) ?Version {
-    const dep = std.mem.trimLeft(u8, dependency, " \t\n\r");
-    return parseWithTag(
-        allocator,
-        alias,
-        alias_hash,
-        dep,
-        tag orelse Version.Tag.infer(dep),
-        sliced,
-        log,
-        package_manager,
-    );
-}
-
-pub fn parseWithTag(
-    allocator: std.mem.Allocator,
-    alias: String,
-    alias_hash: ?PackageNameHash,
-    dependency: string,
-    tag: Dependency.Version.Tag,
-    sliced: *const SlicedString,
-    log_: ?*logger.Log,
-    package_manager: ?*PackageManager,
-) ?Version {
-    switch (tag) {
-        .npm => {
-            var input = dependency;
-
-            var is_alias = false;
-            const name = brk: {
-                if (strings.hasPrefixComptime(input, "npm:")) {
-                    is_alias = true;
-                    var str = input["npm:".len..];
-                    var i: usize = @intFromBool(str.len > 0 and str[0] == '@');
-
-                    while (i < str.len) : (i += 1) {
-                        if (str[i] == '@') {
-                            input = str[i + 1 ..];
-                            break :brk sliced.sub(str[0..i]).value();
-                        }
-                    }
-
-                    input = str[i..];
-
-                    break :brk sliced.sub(str[0..i]).value();
-                }
-
-                break :brk alias;
-            };
-
-            is_alias = is_alias and alias_hash != null;
-
-            // Strip single leading v
-            // v1.0.0 -> 1.0.0
-            // note: "vx" is valid, it becomes "x". "yarn add react@vx" -> "yarn add react@x" -> "yarn add react@17.0.2"
-            if (input.len > 1 and input[0] == 'v') {
-                input = input[1..];
-            }
-
-            const version = Semver.Query.parse(
-                allocator,
-                input,
-                sliced.sub(input),
-            ) catch |err| {
-                switch (err) {
-                    error.OutOfMemory => bun.outOfMemory(),
-                }
-            };
-
-            const result = Version{
-                .literal = sliced.value(),
-                .value = .{
-                    .npm = .{
-                        .is_alias = is_alias,
-                        .name = name,
-                        .version = version,
-                    },
-                },
-                .tag = .npm,
-            };
-
-            if (is_alias) {
-                if (package_manager) |pm| {
-                    pm.known_npm_aliases.put(
-                        allocator,
-                        alias_hash.?,
-                        result,
-                    ) catch unreachable;
-                }
-            }
-
-            return result;
-        },
-        .dist_tag => {
-            var tag_to_use = sliced.value();
-
-            const actual = if (strings.hasPrefixComptime(dependency, "npm:") and dependency.len > "npm:".len)
-                // npm:@foo/bar@latest
-                sliced.sub(brk: {
-                    var i = "npm:".len;
-
-                    // npm:@foo/bar@latest
-                    //     ^
-                    i += @intFromBool(dependency[i] == '@');
-
-                    while (i < dependency.len) : (i += 1) {
-                        // npm:@foo/bar@latest
-                        //             ^
-                        if (dependency[i] == '@') {
-                            break;
-                        }
-                    }
-
-                    tag_to_use = sliced.sub(dependency[i + 1 ..]).value();
-                    break :brk dependency["npm:".len..i];
-                }).value()
-            else
-                alias;
-
-            // name should never be empty
-            if (comptime Environment.allow_assert) bun.assert(!actual.isEmpty());
-
-            return .{
-                .literal = sliced.value(),
-                .value = .{
-                    .dist_tag = .{
-                        .name = actual,
-                        .tag = if (tag_to_use.isEmpty()) String.from("latest") else tag_to_use,
-                    },
-                },
-                .tag = .dist_tag,
-            };
-        },
-        .git => {
-            var input = dependency;
-            if (strings.hasPrefixComptime(input, "git+")) {
-                input = input["git+".len..];
-            }
-            const hash_index = strings.lastIndexOfChar(input, '#');
-
-            return .{
-                .literal = sliced.value(),
-                .value = .{
-                    .git = .{
-                        .owner = String.from(""),
-                        .repo = sliced.sub(if (hash_index) |index| input[0..index] else input).value(),
-                        .committish = if (hash_index) |index| sliced.sub(input[index + 1 ..]).value() else String.from(""),
-                    },
-                },
-                .tag = .git,
-            };
-        },
-        .github => {
-            var from_url = false;
-            var input = dependency;
-            if (strings.hasPrefixComptime(input, "github:")) {
-                input = input["github:".len..];
-            } else if (strings.hasPrefixComptime(input, "git://github.com/")) {
-                input = input["git://github.com/".len..];
-                from_url = true;
-            } else {
-                if (strings.hasPrefixComptime(input, "git+")) {
-                    input = input["git+".len..];
-                }
-                if (strings.hasPrefixComptime(input, "http")) {
-                    var url = input["http".len..];
-                    if (url.len > 2) {
-                        switch (url[0]) {
-                            ':' => {
-                                if (strings.hasPrefixComptime(url, "://")) {
-                                    url = url["://".len..];
-                                }
-                            },
-                            's' => {
-                                if (strings.hasPrefixComptime(url, "s://")) {
-                                    url = url["s://".len..];
-                                }
-                            },
-                            else => {},
-                        }
-                        if (strings.hasPrefixComptime(url, "github.com/")) {
-                            input = url["github.com/".len..];
-                            from_url = true;
-                        }
-                    }
-                }
-            }
-
-            if (comptime Environment.allow_assert) bun.assert(isGitHubRepoPath(input));
-
-            var hash_index: usize = 0;
-            var slash_index: usize = 0;
-            for (input, 0..) |c, i| {
-                switch (c) {
-                    '/' => {
-                        slash_index = i;
-                    },
-                    '#' => {
-                        hash_index = i;
-                        break;
-                    },
-                    else => {},
-                }
-            }
-
-            var repo = if (hash_index == 0) input[slash_index + 1 ..] else input[slash_index + 1 .. hash_index];
-            if (from_url and strings.endsWithComptime(repo, ".git")) {
-                repo = repo[0 .. repo.len - ".git".len];
-            }
-
-            return .{
-                .literal = sliced.value(),
-                .value = .{
-                    .github = .{
-                        .owner = sliced.sub(input[0..slash_index]).value(),
-                        .repo = sliced.sub(repo).value(),
-                        .committish = if (hash_index == 0) String.from("") else sliced.sub(input[hash_index + 1 ..]).value(),
-                    },
-                },
-                .tag = .github,
-            };
-        },
-        .tarball => {
-            if (isRemoteTarball(dependency)) {
-                return .{
-                    .tag = .tarball,
-                    .literal = sliced.value(),
-                    .value = .{ .tarball = .{ .uri = .{ .remote = sliced.sub(dependency).value() } } },
-                };
-            } else if (strings.hasPrefixComptime(dependency, "file://")) {
-                return .{
-                    .tag = .tarball,
-                    .literal = sliced.value(),
-                    .value = .{ .tarball = .{ .uri = .{ .local = sliced.sub(dependency[7..]).value() } } },
-                };
-            } else if (strings.hasPrefixComptime(dependency, "file:")) {
-                return .{
-                    .tag = .tarball,
-                    .literal = sliced.value(),
-                    .value = .{ .tarball = .{ .uri = .{ .local = sliced.sub(dependency[5..]).value() } } },
-                };
-            } else if (strings.contains(dependency, "://")) {
-                if (log_) |log| log.addErrorFmt(null, logger.Loc.Empty, allocator, "invalid or unsupported dependency \"{s}\"", .{dependency}) catch unreachable;
-                return null;
-            }
-
-            return .{
-                .tag = .tarball,
-                .literal = sliced.value(),
-                .value = .{ .tarball = .{ .uri = .{ .local = sliced.value() } } },
-            };
-        },
-        .folder => {
-            if (strings.indexOfChar(dependency, ':')) |protocol| {
-                if (strings.eqlComptime(dependency[0..protocol], "file")) {
-                    const folder = folder: {
-
-                        // from npm:
-                        //
-                        // turn file://../foo into file:../foo
-                        // https://github.com/npm/cli/blob/fc6e291e9c2154c2e76636cb7ebf0a17be307585/node_modules/npm-package-arg/lib/npa.js#L269
-                        //
-                        // something like this won't behave the same
-                        // file://bar/../../foo
-                        const maybe_dot_dot = maybe_dot_dot: {
-                            if (dependency.len > protocol + 1 and dependency[protocol + 1] == '/') {
-                                if (dependency.len > protocol + 2 and dependency[protocol + 2] == '/') {
-                                    if (dependency.len > protocol + 3 and dependency[protocol + 3] == '/') {
-                                        break :maybe_dot_dot dependency[protocol + 4 ..];
-                                    }
-                                    break :maybe_dot_dot dependency[protocol + 3 ..];
-                                }
-                                break :maybe_dot_dot dependency[protocol + 2 ..];
-                            }
-                            break :folder dependency[protocol + 1 ..];
-                        };
-
-                        if (maybe_dot_dot.len > 1 and maybe_dot_dot[0] == '.' and maybe_dot_dot[1] == '.') {
-                            return .{
-                                .literal = sliced.value(),
-                                .value = .{ .folder = sliced.sub(maybe_dot_dot).value() },
-                                .tag = .folder,
-                            };
-                        }
-
-                        break :folder dependency[protocol + 1 ..];
-                    };
-
-                    // from npm:
-                    //
-                    // turn /C:/blah info just C:/blah on windows
-                    // https://github.com/npm/cli/blob/fc6e291e9c2154c2e76636cb7ebf0a17be307585/node_modules/npm-package-arg/lib/npa.js#L277
-                    if (comptime Environment.isWindows) {
-                        if (isWindowsAbsPathWithLeadingSlashes(folder)) |dep| {
-                            return .{
-                                .literal = sliced.value(),
-                                .value = .{ .folder = sliced.sub(dep).value() },
-                                .tag = .folder,
-                            };
-                        }
-                    }
-
-                    return .{
-                        .literal = sliced.value(),
-                        .value = .{ .folder = sliced.sub(folder).value() },
-                        .tag = .folder,
-                    };
-                }
-
-                // check for absolute windows paths
-                if (comptime Environment.isWindows) {
-                    if (protocol == 1 and strings.startsWithWindowsDriveLetter(dependency)) {
-                        return .{
-                            .literal = sliced.value(),
-                            .value = .{ .folder = sliced.sub(dependency).value() },
-                            .tag = .folder,
-                        };
-                    }
-
-                    // from npm:
-                    //
-                    // turn /C:/blah info just C:/blah on windows
-                    // https://github.com/npm/cli/blob/fc6e291e9c2154c2e76636cb7ebf0a17be307585/node_modules/npm-package-arg/lib/npa.js#L277
-                    if (isWindowsAbsPathWithLeadingSlashes(dependency)) |dep| {
-                        return .{
-                            .literal = sliced.value(),
-                            .value = .{ .folder = sliced.sub(dep).value() },
-                            .tag = .folder,
-                        };
-                    }
-                }
-
-                if (log_) |log| log.addErrorFmt(null, logger.Loc.Empty, allocator, "Unsupported protocol {s}", .{dependency}) catch unreachable;
-                return null;
-            }
-
-            return .{
-                .value = .{ .folder = sliced.value() },
-                .tag = .folder,
-                .literal = sliced.value(),
-            };
-        },
-        .uninitialized => return null,
-        .symlink => {
-            if (strings.indexOfChar(dependency, ':')) |colon| {
-                return .{
-                    .value = .{ .symlink = sliced.sub(dependency[colon + 1 ..]).value() },
-                    .tag = .symlink,
-                    .literal = sliced.value(),
-                };
-            }
-
-            return .{
-                .value = .{ .symlink = sliced.value() },
-                .tag = .symlink,
-                .literal = sliced.value(),
-            };
-        },
-        .workspace => {
-            var input = dependency;
-            if (strings.hasPrefixComptime(input, "workspace:")) {
-                input = input["workspace:".len..];
-            }
-            return .{
-                .value = .{ .workspace = sliced.sub(input).value() },
-                .tag = .workspace,
-                .literal = sliced.value(),
-            };
-        },
-        .catalog => {
-            bun.assert(strings.hasPrefixComptime(dependency, "catalog:"));
-
-            const group = dependency["catalog:".len..];
-
-            const trimmed = strings.trim(group, &strings.whitespace_chars);
-
-            return .{
-                .value = .{ .catalog = sliced.sub(trimmed).value() },
-                .tag = .catalog,
-                .literal = sliced.value(),
-            };
-        },
+    // Handle Bun-specific protocols that npm_package_arg doesn't know about
+    if (strings.hasPrefixComptime(dep, "workspace:")) {
+        return NpaBridge.parseWorkspace(dep, sliced);
     }
+    if (strings.hasPrefixComptime(dep, "catalog:")) {
+        return NpaBridge.parseCatalog(dep, sliced);
+    }
+    if (strings.hasPrefixComptime(dep, "link:")) {
+        return NpaBridge.parseSymlink(dep, sliced);
+    }
+
+    // Use npm_package_arg for everything else
+    return NpaBridge.parse(allocator, alias, alias_hash, dep, sliced, log, manager);
 }
 
 pub fn fromJS(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!jsc.JSValue {
@@ -1457,6 +1421,7 @@ pub const Behavior = packed struct(u8) {
 const string = []const u8;
 
 const Environment = @import("../env.zig");
+const npm_package_arg = @import("./npm_package_arg.zig");
 const std = @import("std");
 const Repository = @import("./repository.zig").Repository;
 

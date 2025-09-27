@@ -157,7 +157,7 @@ fn parseWithError(
         }
 
         const placeholder = String.from("@@@");
-        var version = Dependency.parseWithOptionalTag(
+        var version = Dependency.NpaBridge.parseWithOptionalTag(
             allocator,
             if (alias) |name| String.init(input, name) else placeholder,
             if (alias) |name| String.Builder.stringHash(name) else null,
@@ -180,7 +180,7 @@ fn parseWithError(
             return error.UnrecognizedDependencyFormat;
         };
         if (alias != null and version.tag == .git) {
-            if (Dependency.parseWithOptionalTag(
+            if (Dependency.NpaBridge.parseWithOptionalTag(
                 allocator,
                 placeholder,
                 null,
