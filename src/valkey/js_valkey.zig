@@ -1643,6 +1643,7 @@ const debug = bun.Output.scoped(.RedisJS, .visible);
 const Command = @import("./ValkeyCommand.zig");
 const std = @import("std");
 const valkey = @import("./valkey.zig");
+const URL = @import("../bun.js/bindings/URL.zig").URL;
 
 const protocol = @import("./valkey_protocol.zig");
 const RedisError = protocol.RedisError;
@@ -1651,7 +1652,6 @@ const bun = @import("bun");
 const BoringSSL = bun.BoringSSL;
 const String = bun.String;
 const Timer = bun.api.Timer;
-const URL = @import("../bun.js/bindings/URL.zig").URL;
 
 const jsc = bun.jsc;
 const JSValue = jsc.JSValue;
