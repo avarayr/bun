@@ -321,7 +321,7 @@ pub const RunCommand = struct {
                     Output.prettyErrorln("<r><red>error<r><d>:<r> script <b>\"{s}\"<r> was terminated by signal {}<r>", .{ name, exit_code.signal.fmt(Output.enable_ansi_colors_stderr) });
                     Output.flush();
 
-                    if (bun.getRuntimeFeatureFlag(.BUN_INTERNAL_SUPPRESS_CRASH_IN_BUN_RUN)) {
+                    if (bun.FeatureFlag.internal_suppress_crash_in_bun_run.get()) {
                         bun.crash_handler.suppressReporting();
                     }
 
@@ -344,7 +344,7 @@ pub const RunCommand = struct {
                     Output.flush();
                 }
 
-                if (bun.getRuntimeFeatureFlag(.BUN_INTERNAL_SUPPRESS_CRASH_IN_BUN_RUN)) {
+                if (bun.FeatureFlag.internal_suppress_crash_in_bun_run.get()) {
                     bun.crash_handler.suppressReporting();
                 }
 
@@ -521,7 +521,7 @@ pub const RunCommand = struct {
                             });
                         }
 
-                        if (bun.getRuntimeFeatureFlag(.BUN_INTERNAL_SUPPRESS_CRASH_IN_BUN_RUN)) {
+                        if (bun.FeatureFlag.internal_suppress_crash_in_bun_run.get()) {
                             bun.crash_handler.suppressReporting();
                         }
 
@@ -538,7 +538,7 @@ pub const RunCommand = struct {
                                 });
                             }
 
-                            if (bun.getRuntimeFeatureFlag(.BUN_INTERNAL_SUPPRESS_CRASH_IN_BUN_RUN)) {
+                            if (bun.FeatureFlag.internal_suppress_crash_in_bun_run.get()) {
                                 bun.crash_handler.suppressReporting();
                             }
 

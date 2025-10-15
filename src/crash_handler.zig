@@ -2265,7 +2265,7 @@ export fn CrashHandler__setInsideNativePlugin(name: ?[*:0]const u8) callconv(.C)
 export fn CrashHandler__unsupportedUVFunction(name: ?[*:0]const u8) callconv(.C) void {
     bun.analytics.Features.unsupported_uv_function += 1;
     unsupported_uv_function = name;
-    if (bun.getRuntimeFeatureFlag(.BUN_INTERNAL_SUPPRESS_CRASH_ON_UV_STUB)) {
+    if (bun.FeatureFlag.internal_suppress_crash_on_uv_stub.get()) {
         suppressReporting();
     }
     std.debug.panic("unsupported uv function: {s}", .{name.?});

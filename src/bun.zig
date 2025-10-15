@@ -8,6 +8,7 @@ const bun = @This();
 
 pub const Environment = @import("./env.zig");
 pub const EnvVar = @import("./envvars.zig");
+pub const FeatureFlag = EnvVar.FeatureFlag;
 
 pub const use_mimalloc = @import("build_options").use_mimalloc;
 pub const default_allocator: std.mem.Allocator = allocators.c_allocator;
@@ -819,31 +820,6 @@ pub fn openDirAbsoluteNotForDeletingOrRenaming(path_: []const u8) !std.fs.Dir {
         try sys.openA(path_, O.DIRECTORY | O.CLOEXEC | O.RDONLY, 0).unwrap();
 
     return fd.stdDir();
-}
-
-pub fn getRuntimeFeatureFlag(comptime flag: FeatureFlags.RuntimeFeatureFlag) bool {
-    return struct {
-        const state = enum(u8) { idk, disabled, enabled };
-        var is_enabled: std.atomic.Value(state) = std.atomic.Value(state).init(.idk);
-        pub fn get() bool {
-            // .monotonic is okay because there are no side effects we need to observe from a thread that has
-            // written to this variable. This variable is simply a cache, and if its value is not ready yet, we
-            // compute it below. There are no correctness issues if multiple threads perform this computation
-            // simultaneously, as they will all store the same value.
-            return switch (is_enabled.load(.monotonic)) {
-                .enabled => true,
-                .disabled => false,
-                .idk => {
-                    const enabled = if (getenvZ(@tagName(flag))) |val|
-                        strings.eqlComptime(val, "1") or strings.eqlComptime(val, "true")
-                    else
-                        false;
-                    is_enabled.store(if (enabled) .enabled else .disabled, .monotonic);
-                    return enabled;
-                },
-            };
-        }
-    }.get();
 }
 
 pub fn getenvZAnyCase(key: [:0]const u8) ?[]const u8 {

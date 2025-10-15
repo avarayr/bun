@@ -1393,12 +1393,12 @@ pub const internal = struct {
     };
     pub fn getHints() std.c.addrinfo {
         var hints_copy = default_hints;
-        if (bun.getRuntimeFeatureFlag(.BUN_FEATURE_FLAG_DISABLE_ADDRCONFIG)) {
+        if (bun.FeatureFlag.disable_addrconfig.get()) {
             hints_copy.flags.ADDRCONFIG = false;
         }
-        if (bun.getRuntimeFeatureFlag(.BUN_FEATURE_FLAG_DISABLE_IPV6)) {
+        if (bun.FeatureFlag.disable_ipv6.get()) {
             hints_copy.family = std.c.AF.INET;
-        } else if (bun.getRuntimeFeatureFlag(.BUN_FEATURE_FLAG_DISABLE_IPV4)) {
+        } else if (bun.FeatureFlag.disable_ipv4.get()) {
             hints_copy.family = std.c.AF.INET6;
         }
 
@@ -1685,7 +1685,7 @@ pub const internal = struct {
         getaddrinfo_calls += 1;
         var timestamp_to_store: u32 = 0;
         // is there a cache hit?
-        if (!bun.getRuntimeFeatureFlag(.BUN_FEATURE_FLAG_DISABLE_DNS_CACHE)) {
+        if (!bun.FeatureFlag.disable_dns_cache.get()) {
             if (global_cache.get(key, &timestamp_to_store)) |entry| {
                 if (preload) {
                     global_cache.lock.unlock();
@@ -1724,7 +1724,7 @@ pub const internal = struct {
         global_cache.lock.unlock();
 
         if (comptime Environment.isMac) {
-            if (!bun.getRuntimeFeatureFlag(.BUN_FEATURE_FLAG_DISABLE_DNS_CACHE_LIBINFO)) {
+            if (!bun.FeatureFlag.disable_dns_cache_libinfo.get()) {
                 const res = lookupLibinfo(req, loop.internal_loop_data.getParent());
                 log("getaddrinfo({s}) = cache miss (libinfo)", .{host orelse ""});
                 if (res) return req;

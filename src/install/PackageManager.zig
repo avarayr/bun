@@ -831,7 +831,7 @@ pub fn init(
         bun.spawn.process.WaiterThread.setShouldUseWaiterThread();
     }
 
-    if (bun.getRuntimeFeatureFlag(.BUN_FEATURE_FLAG_FORCE_WINDOWS_JUNCTIONS)) {
+    if (bun.FeatureFlag.force_windows_junctions.get()) {
         bun.sys.WindowsSymlinkOptions.has_failed_to_create_symlink = true;
     }
 
