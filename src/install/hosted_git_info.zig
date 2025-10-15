@@ -1203,7 +1203,8 @@ const HostProvider = enum {
                     const committish_slice =
                         if (committish) |c|
                             HostedGitInfo.decodeAndAppend(&sb, c) catch return null
-                        else null;
+                        else
+                            null;
 
                     return .{
                         .user = user_slice,
@@ -1255,7 +1256,8 @@ const HostProvider = enum {
                     const committish_slice =
                         if (committish) |c|
                             HostedGitInfo.decodeAndAppend(&sb, c) catch return null
-                        else null;
+                        else
+                            null;
 
                     return .{
                         .user = user_slice,
@@ -1305,7 +1307,8 @@ const HostProvider = enum {
                     const committish_slice =
                         if (committish.len > 0)
                             HostedGitInfo.decodeAndAppend(&sb, committish) catch return null
-                        else null;
+                        else
+                            null;
 
                     return .{
                         .user = user_slice,
@@ -1361,13 +1364,15 @@ const HostProvider = enum {
                     const user_slice =
                         if (user) |u|
                             HostedGitInfo.decodeAndAppend(&sb, u) catch return null
-                        else null;
+                        else
+                            null;
                     const project_slice =
                         HostedGitInfo.decodeAndAppend(&sb, project) catch return null;
                     const committish_slice =
                         if (committish) |c|
                             HostedGitInfo.decodeAndAppend(&sb, c) catch return null
-                        else null;
+                        else
+                            null;
 
                     return .{
                         .user = user_slice,
@@ -1417,21 +1422,33 @@ const HostProvider = enum {
                     const user_slice = blk: {
                         const writable = sb.writable();
                         var stream = std.io.fixedBufferStream(writable);
-                        const decoded_len = PercentEncoding.decode(@TypeOf(stream.writer()), stream.writer(), user_part,) catch return null;
+                        const decoded_len = PercentEncoding.decode(
+                            @TypeOf(stream.writer()),
+                            stream.writer(),
+                            user_part,
+                        ) catch return null;
                         sb.len += decoded_len;
                         break :blk writable[0..decoded_len];
                     };
                     const project_slice = blk: {
                         const writable = sb.writable();
                         var stream = std.io.fixedBufferStream(writable);
-                        const decoded_len = PercentEncoding.decode(@TypeOf(stream.writer()), stream.writer(), project,) catch return null;
+                        const decoded_len = PercentEncoding.decode(
+                            @TypeOf(stream.writer()),
+                            stream.writer(),
+                            project,
+                        ) catch return null;
                         sb.len += decoded_len;
                         break :blk writable[0..decoded_len];
                     };
                     const committish_slice = if (committish) |c| blk: {
                         const writable = sb.writable();
                         var stream = std.io.fixedBufferStream(writable);
-                        const decoded_len = PercentEncoding.decode(@TypeOf(stream.writer()), stream.writer(), c,) catch return null;
+                        const decoded_len = PercentEncoding.decode(
+                            @TypeOf(stream.writer()),
+                            stream.writer(),
+                            c,
+                        ) catch return null;
                         sb.len += decoded_len;
                         break :blk writable[0..decoded_len];
                     } else null;
