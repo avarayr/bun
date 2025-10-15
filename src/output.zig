@@ -80,14 +80,12 @@ pub const Source = struct {
     }
 
     pub fn isNoColor() bool {
-        const no_color = bun.getenvZ("NO_COLOR") orelse return false;
-        // https://no-color.org/
-        // "when present and not an empty string (regardless of its value)"
-        return no_color.len != 0;
+        if (bun.EnvVar.no_color.get()) return true;
+        return false;
     }
 
     pub fn getForceColorDepth() ?ColorDepth {
-        const force_color = bun.getenvZ("FORCE_COLOR") orelse return null;
+        const force_color = bun.EnvVar.force_color.get() orelse return null;
         // Supported by Node.js, if set will ignore NO_COLOR.
         // - "0" to indicate no color support
         // - "1", "true", or "" to indicate 16-color support
@@ -273,7 +271,7 @@ pub const Source = struct {
             return;
         }
 
-        const term = bun.getenvZ("TERM") orelse "";
+        const term = bun.EnvVar.term.get() orelse "";
         if (strings.eqlComptime(term, "dumb")) {
             return;
         }
@@ -283,19 +281,12 @@ pub const Source = struct {
             return;
         }
 
-        if (bun.getenvZ("CI")) |ci| {
-            inline for (.{ "APPVEYOR", "BUILDKITE", "CIRCLECI", "DRONE", "GITHUB_ACTIONS", "GITLAB_CI", "TRAVIS" }) |ci_env| {
-                if (strings.eqlComptime(ci, ci_env)) {
-                    lazy_color_depth = .@"256";
-                    return;
-                }
-            }
-
+        if (bun.EnvVar.ci.get()) {
             lazy_color_depth = .@"16";
             return;
         }
 
-        if (bun.getenvZ("TERM_PROGRAM")) |term_program| {
+        if (bun.EnvVar.term_program.get()) |term_program| {
             const use_16m = .{
                 "ghostty",
                 "MacTerm",
@@ -313,7 +304,7 @@ pub const Source = struct {
 
         var has_color_term_set = false;
 
-        if (bun.getenvZ("COLORTERM")) |color_term| {
+        if (bun.EnvVar.colorterm.get()) |color_term| {
             if (strings.eqlComptime(color_term, "truecolor") or strings.eqlComptime(color_term, "24bit")) {
                 lazy_color_depth = .@"16m";
                 return;
@@ -450,10 +441,9 @@ pub inline fn isEmojiEnabled() bool {
 }
 
 pub fn isGithubAction() bool {
-    if (bun.getenvZ("GITHUB_ACTIONS")) |value| {
-        return strings.eqlComptime(value, "true") and
-            // Do not print github annotations for AI agents because that wastes the context window.
-            !isAIAgent();
+    if (bun.EnvVar.github_actions.get()) {
+        // Do not print github annotations for AI agents because that wastes the context window.
+        return !isAIAgent();
     }
     return false;
 }
@@ -1266,7 +1256,7 @@ extern "c" fn getpid() c_int;
 pub fn initScopedDebugWriterAtStartup() void {
     bun.debugAssert(source_set);
 
-    if (bun.getenvZ("BUN_DEBUG")) |path| {
+    if (bun.EnvVar.bun_debug.get()) |path| {
         if (path.len > 0 and !strings.eql(path, "0") and !strings.eql(path, "false")) {
             if (std.fs.path.dirname(path)) |dir| {
                 std.fs.cwd().makePath(dir) catch {};

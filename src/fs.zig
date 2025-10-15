@@ -536,8 +536,8 @@ pub const FileSystem = struct {
             return switch (Environment.os) {
                 // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-gettemppathw#remarks
                 .windows => win_tempdir_cache orelse {
-                    const value = bun.getenvZ("TEMP") orelse bun.getenvZ("TMP") orelse brk: {
-                        if (bun.getenvZ("SystemRoot") orelse bun.getenvZ("windir")) |windir| {
+                    const value = bun.EnvVar.temp.get() orelse bun.EnvVar.tmp.get() orelse brk: {
+                        if (bun.EnvVar.system_root.get() orelse bun.EnvVar.windir.get()) |windir| {
                             break :brk std.fmt.allocPrint(
                                 bun.default_allocator,
                                 "{s}\\Temp",
@@ -578,7 +578,7 @@ pub const FileSystem = struct {
         pub var tmpdir_path_set = false;
         pub fn tmpdirPath(_: *const @This()) []const u8 {
             if (!tmpdir_path_set) {
-                tmpdir_path = bun.getenvZ("BUN_TMPDIR") orelse bun.getenvZ("TMPDIR") orelse platformTempDir();
+                tmpdir_path = bun.EnvVar.bun_tmpdir.get() orelse bun.EnvVar.tmpdir.get() orelse platformTempDir();
                 tmpdir_path_set = true;
             }
 
@@ -587,7 +587,7 @@ pub const FileSystem = struct {
 
         pub fn openTmpDir(_: *const RealFS) !std.fs.Dir {
             if (!tmpdir_path_set) {
-                tmpdir_path = bun.getenvZ("BUN_TMPDIR") orelse bun.getenvZ("TMPDIR") orelse platformTempDir();
+                tmpdir_path = bun.EnvVar.bun_tmpdir.get() orelse bun.EnvVar.tmpdir.get() orelse platformTempDir();
                 tmpdir_path_set = true;
             }
 
@@ -636,7 +636,7 @@ pub const FileSystem = struct {
         }
 
         pub fn getDefaultTempDir() string {
-            return bun.getenvZ("BUN_TMPDIR") orelse bun.getenvZ("TMPDIR") orelse platformTempDir();
+            return bun.EnvVar.bun_tmpdir.get() orelse bun.EnvVar.tmpdir.get() orelse platformTempDir();
         }
 
         pub fn setTempdir(path: ?string) void {

@@ -873,15 +873,15 @@ pub fn userInfo(globalThis: *jsc.JSGlobalObject, options: gen.UserInfoOptions) b
     result.put(globalThis, jsc.ZigString.static("homedir"), home.toJS(globalThis));
 
     if (comptime Environment.isWindows) {
-        result.put(globalThis, jsc.ZigString.static("username"), jsc.ZigString.init(bun.getenvZ("USERNAME") orelse "unknown").withEncoding().toJS(globalThis));
+        result.put(globalThis, jsc.ZigString.static("username"), jsc.ZigString.init(bun.EnvVar.user.get() orelse "unknown").withEncoding().toJS(globalThis));
         result.put(globalThis, jsc.ZigString.static("uid"), jsc.JSValue.jsNumber(-1));
         result.put(globalThis, jsc.ZigString.static("gid"), jsc.JSValue.jsNumber(-1));
         result.put(globalThis, jsc.ZigString.static("shell"), jsc.JSValue.jsNull());
     } else {
-        const username = bun.getenvZ("USER") orelse "unknown";
+        const username = bun.EnvVar.user.get() orelse "unknown";
 
         result.put(globalThis, jsc.ZigString.static("username"), jsc.ZigString.init(username).withEncoding().toJS(globalThis));
-        result.put(globalThis, jsc.ZigString.static("shell"), jsc.ZigString.init(bun.getenvZ("SHELL") orelse "unknown").withEncoding().toJS(globalThis));
+        result.put(globalThis, jsc.ZigString.static("shell"), jsc.ZigString.init(bun.EnvVar.shell.get() orelse "unknown").withEncoding().toJS(globalThis));
         result.put(globalThis, jsc.ZigString.static("uid"), jsc.JSValue.jsNumber(c.getuid()));
         result.put(globalThis, jsc.ZigString.static("gid"), jsc.JSValue.jsNumber(c.getgid()));
     }

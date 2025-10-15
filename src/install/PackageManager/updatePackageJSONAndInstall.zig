@@ -667,7 +667,7 @@ fn updatePackageJSONAndInstallAndCLI(
                     ,
                         .{
                             bun.fmt.quote(manager.track_installed_bin.basename),
-                            MoreInstructions{ .shell = bun.cli.ShellCompletions.Shell.fromEnv([]const u8, bun.getenvZ("SHELL") orelse ""), .folder = manager.options.bin_path },
+                            MoreInstructions{ .shell = bun.cli.ShellCompletions.Shell.fromEnv([]const u8, bun.EnvVar.shell.get() orelse ""), .folder = manager.options.bin_path },
                         },
                     );
                     Output.flush();

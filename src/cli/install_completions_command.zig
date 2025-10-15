@@ -130,7 +130,7 @@ pub const InstallCompletionsCommand = struct {
         var stdout = std.io.getStdOut();
 
         var shell = ShellCompletions.Shell.unknown;
-        if (bun.getenvZ("SHELL")) |shell_name| {
+        if (bun.EnvVar.shell.get()) |shell_name| {
             shell = ShellCompletions.Shell.fromEnv(@TypeOf(shell_name), shell_name);
         }
 

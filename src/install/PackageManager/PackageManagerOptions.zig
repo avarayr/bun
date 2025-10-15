@@ -168,7 +168,7 @@ pub const Update = struct {
 };
 
 pub fn openGlobalDir(explicit_global_dir: string) !std.fs.Dir {
-    if (bun.getenvZ("BUN_INSTALL_GLOBAL_DIR")) |home_dir| {
+    if (bun.EnvVar.bun_install_global_dir.get()) |home_dir| {
         return try std.fs.cwd().makeOpenPath(home_dir, .{});
     }
 
@@ -203,7 +203,7 @@ pub fn openGlobalDir(explicit_global_dir: string) !std.fs.Dir {
 }
 
 pub fn openGlobalBinDir(opts_: ?*const Api.BunInstall) !std.fs.Dir {
-    if (bun.getenvZ("BUN_INSTALL_BIN")) |home_dir| {
+    if (bun.EnvVar.bun_install_bin.get()) |home_dir| {
         return try std.fs.cwd().makeOpenPath(home_dir, .{});
     }
 

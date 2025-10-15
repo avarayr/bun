@@ -1203,7 +1203,7 @@ fn configureDebugger(this: *VirtualMachine, cli_flag: bun.cli.Command.Debugger) 
         return;
     }
 
-    const unix = bun.getenvZ("BUN_INSPECT") orelse "";
+    const unix = bun.EnvVar.bun_inspect.get() orelse "";
     const connect_to = bun.getenvZ("BUN_INSPECT_CONNECT_TO") orelse "";
 
     const set_breakpoint_on_first_line = unix.len > 0 and strings.endsWith(unix, "?break=1"); // If we should set a breakpoint on the first line

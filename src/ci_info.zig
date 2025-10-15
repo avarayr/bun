@@ -73,10 +73,8 @@ const CI = enum {
             var name: []const u8 = "";
             defer ci_name = name;
 
-            if (bun.getenvZ("CI")) |ci| {
-                if (strings.eqlComptime(ci, "false")) {
-                    return;
-                }
+            if (!bun.EnvVar.ci.get()) {
+                return;
             }
 
             // Special case Heroku

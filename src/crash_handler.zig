@@ -583,7 +583,7 @@ pub fn handleRootError(err: anyerror, error_return_trace: ?*std.builtin.StackTra
                         },
                     );
 
-                    if (bun.getenvZ("USER")) |user| {
+                    if (bun.EnvVar.user.get()) |user| {
                         if (user.len > 0) {
                             Output.prettyError(
                                 \\
@@ -652,7 +652,7 @@ pub fn handleRootError(err: anyerror, error_return_trace: ?*std.builtin.StackTra
                         },
                     );
 
-                    if (bun.getenvZ("USER")) |user| {
+                    if (bun.EnvVar.user.get()) |user| {
                         if (user.len > 0) {
                             Output.prettyError(
                                 \\
@@ -699,7 +699,7 @@ pub fn handleRootError(err: anyerror, error_return_trace: ?*std.builtin.StackTra
                     );
 
                     if (bun.Environment.isLinux) {
-                        if (bun.getenvZ("USER")) |user| {
+                        if (bun.EnvVar.user.get()) |user| {
                             if (user.len > 0) {
                                 Output.prettyError(
                                     \\

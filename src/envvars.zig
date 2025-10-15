@@ -1,11 +1,30 @@
 //! Unified module for controlling and managing environment variables in Bun.
 
 // Keep this list alphabetically sorted.
-pub const bun_install = new(.string, "BUN_INSTALL", "BUN_INSTALL", .{});
-pub const home = new(.string, "HOME", "USERPROFILE", .{});
-pub const path = new(.string, "PATH", "PATH", .{});
-pub const xdg_cache_home = new(.string, "XDG_CACHE_HOME", null, .{});
-pub const xdg_config_home = new(.string, "XDG_CONFIG_HOME", null, .{});
+pub const bun_debug = new(.string, "BUN_DEBUG", .{});
+pub const bun_inspect = new(.string, "BUN_INSPECT", .{});
+pub const bun_install = new(.string, "BUN_INSTALL", .{});
+pub const bun_install_bin = new(.string, "BUN_INSTALL_BIN", .{});
+pub const bun_install_global_dir = new(.string, "BUN_INSTALL_GLOBAL_DIR", .{});
+pub const bun_tmpdir = new(.string, "BUN_TMPDIR", .{});
+pub const ci = new(.boolean, "CI", .{ .default = false });
+pub const colorterm = new(.string, "COLORTERM", .{});
+pub const force_color = new(.string, "FORCE_COLOR", .{});
+pub const github_actions = new(.boolean, "GITHUB_ACTIONS", .{ .default = false });
+pub const home = platformSpecificNew(.string, "HOME", "USERPROFILE", .{});
+pub const no_color = new(.boolean, "NO_COLOR", .{ .default = false });
+pub const path = new(.string, "PATH", .{});
+pub const shell = platformSpecificNew(.string, "SHELL", null, .{});
+pub const system_root = platformSpecificNew(.string, null, "SystemRoot", .{ .default = "C:\\Windows" });
+pub const temp = platformSpecificNew(.string, null, "TEMP", .{});
+pub const term = new(.string, "TERM", .{});
+pub const term_program = new(.string, "TERM_PROGRAM", .{});
+pub const tmp = platformSpecificNew(.string, null, "TMP", .{});
+pub const tmpdir = platformSpecificNew(.string, "TMPDIR", null, .{});
+pub const user = platformSpecificNew(.string, "USER", "USERNAME", .{});
+pub const windir = platformSpecificNew(.string, null, "windir", .{});
+pub const xdg_cache_home = platformSpecificNew(.string, "XDG_CACHE_HOME", null, .{});
+pub const xdg_config_home = platformSpecificNew(.string, "XDG_CONFIG_HOME", null, .{});
 
 // Feature flags, keep sorted alphabetically.
 pub const FeatureFlag = struct {
@@ -57,7 +76,16 @@ const EnvVarType = enum { string, boolean };
 /// Technically, none of the operations here are thread-safe, so writing to environment variables
 /// does not guarantee that other threads will see the changes. You should avoid writing to
 /// environment variables.
-fn new(
+fn new(comptime T: EnvVarType, comptime key: [:0]const u8, comptime opts: EnvVarOpts(T)) type {
+    return platformSpecificNew(T, key, key, opts);
+}
+
+/// Identical to new, except it allows you to specify different keys for POSIX and Windows.
+///
+/// If the current platform does not have a key specified, all methods that attempt to read the
+/// environment variable will fail at compile time, except for `platformGet` and `platformKey`,
+/// which will return null instead.
+fn platformSpecificNew(
     comptime T: EnvVarType,
     comptime posix_key: ?[:0]const u8,
     comptime windows_key: ?[:0]const u8,
@@ -276,7 +304,7 @@ pub fn EnvVarOpts(comptime T: EnvVarType) type {
 }
 
 pub fn newFeatureFlag(comptime env_var: [:0]const u8) type {
-    return new(.boolean, env_var, env_var, .{ .default = false });
+    return new(.boolean, env_var, .{ .default = false });
 }
 
 const bun = @import("bun");
