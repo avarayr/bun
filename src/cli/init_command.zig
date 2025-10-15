@@ -1002,7 +1002,7 @@ const Template = enum {
         const pathbuffer = bun.path_buffer_pool.get();
         defer bun.path_buffer_pool.put(pathbuffer);
 
-        return bun.which(pathbuffer, bun.getenvZ("PATH") orelse return false, bun.fs.FileSystem.instance.top_level_dir, "claude") != null;
+        return bun.which(pathbuffer, bun.EnvVar.path.get() orelse return false, bun.fs.FileSystem.instance.top_level_dir, "claude") != null;
     }
 
     pub fn createAgentRule() void {
