@@ -180,6 +180,14 @@ pub const Snapshots = struct {
         }
     }
 
+    pub fn clearCounts(this: *Snapshots) void {
+        var count_key_itr = this.counts.keyIterator();
+        while (count_key_itr.next()) |key| {
+            this.allocator.free(key.*);
+        }
+        this.counts.clearAndFree();
+    }
+
     pub fn writeSnapshotFile(this: *Snapshots) !void {
         if (this._current_file) |_file| {
             var file = _file;
@@ -195,11 +203,7 @@ pub const Snapshots = struct {
             }
             this.values.clearAndFree();
 
-            var count_key_itr = this.counts.keyIterator();
-            while (count_key_itr.next()) |key| {
-                this.allocator.free(key.*);
-            }
-            this.counts.clearAndFree();
+            this.clearCounts();
         }
     }
 
